@@ -27,8 +27,14 @@ const client = new Client({
 async function registerCommands(applicationId) {
   const commands = [
     new SlashCommandBuilder()
-      .setName("2wiadomosc")
-      .setDescription("Wyślij wiadomość jako bot"),
+      .setName("wiadomosc")
+      .setDescription("Wyślij wiadomość jako bot (zielona ramka)")
+      .addStringOption((opt) =>
+        opt
+          .setName("tresc")
+          .setDescription("Treść wiadomości (możesz oznaczać osoby @nick)")
+          .setRequired(true)
+      ),
     new SlashCommandBuilder()
       .setName("legit")
       .setDescription("Wystaw opinię 5 gwiazdek dla sprzedawcy")
@@ -44,7 +50,7 @@ async function registerCommands(applicationId) {
   await rest.put(Routes.applicationCommands(applicationId), {
     body: commands.map((c) => c.toJSON()),
   });
-  console.log("Zarejestrowano komendy /2wiadomosc i /legit");
+  console.log("Zarejestrowano komendy /wiadomosc i /legit");
 }
 
 client.once(Events.ClientReady, async (readyClient) => {
@@ -53,105 +59,88 @@ client.once(Events.ClientReady, async (readyClient) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-  if (interaction.isChatInputCommand()) {
-    if (interaction.commandName === "2wiadomosc") {
-      const modal = new ModalBuilder()
-        .setCustomId(`wiadomosc_modal:${interaction.channelId}`)
-        .setTitle("Wyślij wiadomość jako bot");
+  if (!interaction.isChatInputCommand()) return;
 
-      const textInput = new TextInputBuilder()
-        .setCustomId("tresc_wiadomosci")
-        .setLabel("Treść wiadomości")
-        .setStyle(TextInputStyle.Paragraph)
-        .setPlaceholder("Napisz tutaj swoją wiadomość...")
-        .setRequired(true)
-        .setMaxLength(2000);
+  if (interaction.commandName === "wiadomosc") {
+    const tresc = interaction.options.getString("tresc");
 
-      const row = new ActionRowBuilder().addComponents(textInput);
-      modal.addComponents(row);
-      await interaction.showModal(modal);
-    }
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    if (interaction.commandName === "legit") {
-      const nick = interaction.options.getString("nick");
+    try {
+      const channel = await client.channels.fetch(interaction.channelId);
 
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      if (
+        !channel ||
+        (channel.type !== ChannelType.GuildText &&
+          channel.type !== ChannelType.GuildAnnouncement &&
+          channel.type !== ChannelType.PublicThread &&
+          channel.type !== ChannelType.PrivateThread)
+      ) {
+        await interaction.editReply({ content: "Nie mogę wysłać wiadomości na tym kanale." });
+        return;
+      }
 
-      try {
-        const channel = await client.channels.fetch(interaction.channelId);
+      const embed = new EmbedBuilder()
+        .setColor(0x57f287)
+        .setDescription(tresc);
 
-        if (
-          !channel ||
-          (channel.type !== ChannelType.GuildText &&
-            channel.type !== ChannelType.GuildAnnouncement &&
-            channel.type !== ChannelType.PublicThread &&
-            channel.type !== ChannelType.PrivateThread)
-        ) {
-          await interaction.editReply({ content: "Nie mogę wysłać opinii na tym kanale." });
-          return;
-        }
-
-        const embed = new EmbedBuilder()
-          .setColor(0xffd700)
-          .setDescription(`⭐⭐⭐⭐⭐\n**${nick}**`);
-
-        await channel.send({ embeds: [embed] });
-        await interaction.editReply({ content: "Opinia wysłana!" });
-        console.log(`Wystawiono opinię dla ${nick} przez ${interaction.user.tag}`);
-      } catch (err) {
-        console.error("Błąd:", err.message);
-        if (err.code === 50001 || err.code === 50013) {
-          await interaction.editReply({
-            content:
-              "Bot nie ma uprawnień na tym kanale.\n" +
-              "Wejdź w Ustawienia kanału → Uprawnienia i dodaj botowi:\n" +
-              "✅ Wyświetlaj kanał\n" +
-              "✅ Wysyłaj wiadomości",
-          });
-        } else {
-          await interaction.editReply({ content: "Wystąpił błąd podczas wysyłania opinii." });
-        }
+      await channel.send({ embeds: [embed], allowedMentions: { parse: ["users", "roles", "everyone"] } });
+      await interaction.editReply({ content: "Wiadomość wysłana!" });
+      console.log(`Wysłano wiadomość przez ${interaction.user.tag}`);
+    } catch (err) {
+      console.error("Błąd:", err.message);
+      if (err.code === 50001 || err.code === 50013) {
+        await interaction.editReply({
+          content:
+            "Bot nie ma uprawnień na tym kanale.\n" +
+            "Wejdź w Ustawienia kanału → Uprawnienia i dodaj botowi:\n" +
+            "✅ Wyświetlaj kanał\n" +
+            "✅ Wysyłaj wiadomości",
+        });
+      } else {
+        await interaction.editReply({ content: "Wystąpił błąd podczas wysyłania wiadomości." });
       }
     }
   }
 
-  if (interaction.isModalSubmit()) {
-    if (interaction.customId.startsWith("wiadomosc_modal:")) {
-      const tresc = interaction.fields.getTextInputValue("tresc_wiadomosci");
-      const channelId = interaction.customId.split(":")[1];
+  if (interaction.commandName === "legit") {
+    const nick = interaction.options.getString("nick");
 
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-      try {
-        const channel = await client.channels.fetch(channelId);
+    try {
+      const channel = await client.channels.fetch(interaction.channelId);
 
-        if (
-          !channel ||
-          (channel.type !== ChannelType.GuildText &&
-            channel.type !== ChannelType.GuildAnnouncement &&
-            channel.type !== ChannelType.PublicThread &&
-            channel.type !== ChannelType.PrivateThread)
-        ) {
-          await interaction.editReply({ content: "Nie mogę wysłać wiadomości na tym kanale." });
-          return;
-        }
+      if (
+        !channel ||
+        (channel.type !== ChannelType.GuildText &&
+          channel.type !== ChannelType.GuildAnnouncement &&
+          channel.type !== ChannelType.PublicThread &&
+          channel.type !== ChannelType.PrivateThread)
+      ) {
+        await interaction.editReply({ content: "Nie mogę wysłać opinii na tym kanale." });
+        return;
+      }
 
-        await channel.send(tresc);
-        await interaction.editReply({ content: "Wiadomość wysłana!" });
-        console.log(`Wysłano wiadomość przez ${interaction.user.tag}`);
-      } catch (err) {
-        console.error("Błąd:", err.message);
-        if (err.code === 50001 || err.code === 50013) {
-          await interaction.editReply({
-            content:
-              "Bot nie ma uprawnień na tym kanale.\n" +
-              "Wejdź w Ustawienia kanału → Uprawnienia i dodaj botowi:\n" +
-              "✅ Wyświetlaj kanał\n" +
-              "✅ Wysyłaj wiadomości",
-          });
-        } else {
-          await interaction.editReply({ content: "Wystąpił błąd podczas wysyłania wiadomości." });
-        }
+      const embed = new EmbedBuilder()
+        .setColor(0xffd700)
+        .setDescription(`⭐⭐⭐⭐⭐\n**${nick}**`);
+
+      await channel.send({ embeds: [embed] });
+      await interaction.editReply({ content: "Opinia wysłana!" });
+      console.log(`Wystawiono opinię dla ${nick} przez ${interaction.user.tag}`);
+    } catch (err) {
+      console.error("Błąd:", err.message);
+      if (err.code === 50001 || err.code === 50013) {
+        await interaction.editReply({
+          content:
+            "Bot nie ma uprawnień na tym kanale.\n" +
+            "Wejdź w Ustawienia kanału → Uprawnienia i dodaj botowi:\n" +
+            "✅ Wyświetlaj kanał\n" +
+            "✅ Wysyłaj wiadomości",
+        });
+      } else {
+        await interaction.editReply({ content: "Wystąpił błąd podczas wysyłania opinii." });
       }
     }
   }
