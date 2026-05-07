@@ -31,7 +31,13 @@ async function registerCommands(applicationId) {
       .setDescription("Wyślij wiadomość jako bot"),
     new SlashCommandBuilder()
       .setName("legit")
-      .setDescription("Wystaw opinię z 5 gwiazdkami"),
+      .setDescription("Wystaw opinię 5 gwiazdek dla sprzedawcy")
+      .addStringOption((opt) =>
+        opt
+          .setName("nick")
+          .setDescription("Nick osoby, u której kupowałeś")
+          .setRequired(true)
+      ),
   ];
 
   const rest = new REST().setToken(token);
@@ -67,31 +73,45 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     if (interaction.commandName === "legit") {
-      const modal = new ModalBuilder()
-        .setCustomId(`legit_modal:${interaction.channelId}`)
-        .setTitle("Wystaw opinię ⭐⭐⭐⭐⭐");
+      const nick = interaction.options.getString("nick");
 
-      const autorInput = new TextInputBuilder()
-        .setCustomId("autor")
-        .setLabel("Autor opinii (nick/imię)")
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder("np. Krzysiek")
-        .setRequired(true)
-        .setMaxLength(50);
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-      const trescInput = new TextInputBuilder()
-        .setCustomId("tresc_opinii")
-        .setLabel("Treść opinii")
-        .setStyle(TextInputStyle.Paragraph)
-        .setPlaceholder("Napisz treść opinii...")
-        .setRequired(true)
-        .setMaxLength(1000);
+      try {
+        const channel = await client.channels.fetch(interaction.channelId);
 
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(autorInput),
-        new ActionRowBuilder().addComponents(trescInput)
-      );
-      await interaction.showModal(modal);
+        if (
+          !channel ||
+          (channel.type !== ChannelType.GuildText &&
+            channel.type !== ChannelType.GuildAnnouncement &&
+            channel.type !== ChannelType.PublicThread &&
+            channel.type !== ChannelType.PrivateThread)
+        ) {
+          await interaction.editReply({ content: "Nie mogę wysłać opinii na tym kanale." });
+          return;
+        }
+
+        const embed = new EmbedBuilder()
+          .setColor(0xffd700)
+          .setDescription(`⭐⭐⭐⭐⭐\n**${nick}**`);
+
+        await channel.send({ embeds: [embed] });
+        await interaction.editReply({ content: "Opinia wysłana!" });
+        console.log(`Wystawiono opinię dla ${nick} przez ${interaction.user.tag}`);
+      } catch (err) {
+        console.error("Błąd:", err.message);
+        if (err.code === 50001 || err.code === 50013) {
+          await interaction.editReply({
+            content:
+              "Bot nie ma uprawnień na tym kanale.\n" +
+              "Wejdź w Ustawienia kanału → Uprawnienia i dodaj botowi:\n" +
+              "✅ Wyświetlaj kanał\n" +
+              "✅ Wysyłaj wiadomości",
+          });
+        } else {
+          await interaction.editReply({ content: "Wystąpił błąd podczas wysyłania opinii." });
+        }
+      }
     }
   }
 
@@ -131,52 +151,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
           });
         } else {
           await interaction.editReply({ content: "Wystąpił błąd podczas wysyłania wiadomości." });
-        }
-      }
-    }
-
-    if (interaction.customId.startsWith("legit_modal:")) {
-      const autor = interaction.fields.getTextInputValue("autor");
-      const tresc = interaction.fields.getTextInputValue("tresc_opinii");
-      const channelId = interaction.customId.split(":")[1];
-
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-      try {
-        const channel = await client.channels.fetch(channelId);
-
-        if (
-          !channel ||
-          (channel.type !== ChannelType.GuildText &&
-            channel.type !== ChannelType.GuildAnnouncement &&
-            channel.type !== ChannelType.PublicThread &&
-            channel.type !== ChannelType.PrivateThread)
-        ) {
-          await interaction.editReply({ content: "Nie mogę wysłać opinii na tym kanale." });
-          return;
-        }
-
-        const embed = new EmbedBuilder()
-          .setColor(0xffd700)
-          .setTitle("⭐⭐⭐⭐⭐")
-          .setDescription(`*"${tresc}"*`)
-          .setFooter({ text: `— ${autor}` });
-
-        await channel.send({ embeds: [embed] });
-        await interaction.editReply({ content: "Opinia wysłana!" });
-        console.log(`Wysłano opinię przez ${interaction.user.tag}`);
-      } catch (err) {
-        console.error("Błąd:", err.message);
-        if (err.code === 50001 || err.code === 50013) {
-          await interaction.editReply({
-            content:
-              "Bot nie ma uprawnień na tym kanale.\n" +
-              "Wejdź w Ustawienia kanału → Uprawnienia i dodaj botowi:\n" +
-              "✅ Wyświetlaj kanał\n" +
-              "✅ Wysyłaj wiadomości",
-          });
-        } else {
-          await interaction.editReply({ content: "Wystąpił błąd podczas wysyłania opinii." });
         }
       }
     }
